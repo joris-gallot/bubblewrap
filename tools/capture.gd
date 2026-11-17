@@ -6,6 +6,7 @@
 #   --height H (camera height), --pops N (random strokes near the center), --radius R (stroke radius),
 #   --steamrollers N, --wallet N, --thumb LEVEL, --mid-pop (shot taken 0.03 s after a big stroke).
 #   --press S (shot taken S seconds into a press at the center, below Game.PRESS_MAX).
+#   --producers N (owns one of each of the first N producer tiers).
 # Uses its own save file and mutes sound.
 extends Node
 
@@ -41,6 +42,8 @@ func _ready() -> void:
 	for n in int(_options.get("steamrollers", "0")):
 		game.economy.add_pops(game.economy.cost(Economy.STEAMROLLER))
 		game.buy(Economy.STEAMROLLER)
+	for n in int(_options.get("producers", "0")):
+		game.economy.producers[Economy.PRODUCERS[n]["id"]] = 1
 	await get_tree().process_frame
 	await get_tree().process_frame
 

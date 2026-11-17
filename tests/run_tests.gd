@@ -9,6 +9,10 @@ const TESTS: Array[StringName] = [
 	&"test_a_bubble_pops_only_once",
 	&"test_capsule_pops_exactly_the_bubbles_in_reach",
 	&"test_economy_prices_and_purchases",
+	&"test_producers_cost_more_and_pop_over_time",
+	&"test_counter_stops_at_the_world_total",
+	&"test_shop_reveals_producers_one_tier_at_a_time",
+	&"test_pacing_stays_in_target",
 	&"test_click_pops_and_pays",
 	&"test_press_squeezes_then_release_bursts",
 	&"test_holding_bursts_on_its_own",
@@ -115,6 +119,56 @@ func test_economy_prices_and_purchases() -> void:
 	check(economy.cost(Economy.STEAMROLLER) > first, "each steamroller costs more")
 	check(Economy.format_count(1234567) == "1,234,567", "thousands separators")
 	check(Economy.format_count(Economy.WORLD_BUBBLES) == "10,000,000,000,000", "world count fits an int")
+
+
+func test_producers_cost_more_and_pop_over_time() -> void:
+	var economy := Economy.new()
+	for producer in Economy.PRODUCERS:
+		check(Economy.UPGRADES.has(producer["id"]), "%s is sold in the shop" % producer["id"])
+		check(Hud.NAMES.has(producer["id"]) and Hud.DESCRIPTIONS.has(producer["id"]), "%s has a name and description" % producer["id"])
+	var first := economy.cost(&"elephants")
+	economy.add_pops(first * 3)
+	check(economy.buy(&"elephants"), "elephants bought")
+	check(economy.cost(&"elephants") > first, "the second herd costs more")
+	var before := economy.popped
+	var total := 0
+	# 1/160 s steps are exact in binary and each makes 0.75 pop, so fractions must carry.
+	for i in 160:
+		total += economy.produce(1.0 / 160.0)
+	check(total == 120 and economy.popped == before + 120, "one herd pops 120 in a second, fractions carried (%d)" % total)
+	var saved := Economy.new()
+	saved.from_dict(economy.to_dict())
+	check(saved.producer_count(&"elephants") == 1, "producers survive a save")
+
+
+func test_counter_stops_at_the_world_total() -> void:
+	var economy := Economy.new()
+	economy.add_pops(Economy.WORLD_BUBBLES - 5)
+	check(economy.add_pops(10) == 5, "only the last 5 bubbles count")
+	check(economy.bubbles_left() == 0 and economy.popped == Economy.WORLD_BUBBLES, "Earth is out of bubble wrap")
+	economy.producers[&"moon"] = 3
+	check(economy.produce(1.0) == 0 and economy.popped == Economy.WORLD_BUBBLES, "producers stop at the world total")
+
+
+func test_shop_reveals_producers_one_tier_at_a_time() -> void:
+	var economy := Economy.new()
+	check(not economy.is_listed(&"elephants"), "no producer before a steamroller")
+	economy.steamrollers = 1
+	check(economy.is_listed(&"elephants") and not economy.is_listed(&"monster_trucks"), "first tier after a steamroller")
+	economy.producers[&"elephants"] = 1
+	check(economy.is_listed(&"monster_trucks") and not economy.is_listed(&"anvil_airdrop"), "next tier once the previous is owned")
+	economy.thumb = Economy.THUMB_COSTS.size()
+	check(not economy.is_listed(Economy.THUMB), "a maxed thumb leaves the shop")
+
+
+func test_pacing_stays_in_target() -> void:
+	# Target from the design: first steamroller within a few minutes, Earth emptied in a couple of hours.
+	var result := Balance.simulate()
+	var hours: float = result["seconds"] / 3600.0
+	check(hours > 1.5 and hours < 4.0, "Earth emptied in %.2f h" % hours)
+	check(result["first"].get(Economy.STEAMROLLER, INF) < 5 * 60.0, "first steamroller within 5 min")
+	for producer in Economy.PRODUCERS:
+		check(result["first"].has(producer["id"]), "%s gets bought" % producer["id"])
 
 
 func test_click_pops_and_pays() -> void:

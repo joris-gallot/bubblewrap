@@ -92,6 +92,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		focus -= Vector2(event.relative.x, event.relative.y / sin(PITCH)) * world_per_pixel
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_F9:
 		reset()
+	elif event is InputEventKey and event.pressed and event.keycode == KEY_F10:
+		# Dev: fast-forward to test the progression.
+		Engine.time_scale = {1.0: 10.0, 10.0: 100.0}.get(Engine.time_scale, 1.0)
 
 
 func _input(event: InputEvent) -> void:
@@ -116,8 +119,9 @@ func _process(delta: float) -> void:
 	for steamroller in steamrollers:
 		var swept := steamroller.advance(delta)
 		pop_segment(swept[0], swept[1], steamroller.radius)
+	economy.produce(delta)
 
-	hud.refresh(economy)
+	hud.refresh(economy, delta)
 	_autosave += delta
 	if _autosave >= AUTOSAVE_SECONDS:
 		_autosave = 0.0
