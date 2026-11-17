@@ -38,6 +38,9 @@ var _left_label: Label
 var _wallet_label: Label
 var _rate_label: Label
 var _hint_label: Label
+var _caption_label: Label
+var _caption_tween: Tween
+var _flash: ColorRect
 var _buttons: Dictionary[StringName, Button] = {}
 var _punch: Tween
 var _shown_popped := -1
@@ -92,6 +95,40 @@ func _ready() -> void:
 	_hint_label.offset_left = 20
 	_hint_label.offset_top = -40
 	_hint_label.modulate = Color(1, 1, 1, 0.8)
+
+	_caption_label = _label(44, root)
+	_caption_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
+	_caption_label.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_caption_label.offset_top = -150
+	_caption_label.offset_bottom = -90
+	_caption_label.modulate.a = 0.0
+
+	_flash = ColorRect.new()
+	_flash.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_flash.color = Color(1, 1, 1, 0)
+	_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(_flash)
+
+
+## Big line under the globe; an empty text hides it at once.
+func show_caption(text: String, duration: float) -> void:
+	if _caption_tween:
+		_caption_tween.kill()
+	_caption_label.text = text
+	if text.is_empty():
+		_caption_label.modulate.a = 0.0
+		return
+	_caption_label.modulate.a = 0.0
+	_caption_label.pivot_offset = _caption_label.size / 2.0
+	_caption_label.scale = Vector2.ONE * 0.7
+	_caption_tween = create_tween().set_parallel()
+	_caption_tween.tween_property(_caption_label, "modulate:a", 1.0, 0.25)
+	_caption_tween.tween_property(_caption_label, "scale", Vector2.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_caption_tween.chain().tween_property(_caption_label, "modulate:a", 0.0, 0.3).set_delay(maxf(duration - 0.55, 0.0))
+
+
+func set_flash(alpha: float) -> void:
+	_flash.color.a = alpha
 
 
 func refresh(economy: Economy, delta: float) -> void:

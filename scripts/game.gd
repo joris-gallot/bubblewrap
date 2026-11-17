@@ -31,6 +31,7 @@ var clock := 0.0
 var focus := Vector2.ZERO
 var height := START_HEIGHT
 var target_height := START_HEIGHT
+var pitch := PITCH
 var steamrollers: Array[Steamroller] = []
 
 var _pressing := false
@@ -39,18 +40,24 @@ var _press_time := 0.0
 var _dragging := false
 var _last_drag := Vector2.ZERO
 var _autosave := 0.0
+var _environment: Environment
 
 @onready var camera: Camera3D = $Camera3D
 @onready var view: SheetView = $SheetView
 @onready var fx: PopFx = $PopFx
 @onready var hud: Hud = $Hud
 @onready var _steamroller_root: Node3D = $Steamrollers
+var globe: Globe
+var cinematic: Cinematic
 
 
 func _ready() -> void:
 	view.data = data
 	fx.muted = muted
 	hud.buy_requested.connect(buy)
+	globe = Globe.new()
+	add_child(globe)
+	cinematic = Cinematic.new(self)
 	_build_lighting()
 	load_game()
 	_update_camera(0.0)
@@ -63,6 +70,7 @@ func _build_lighting() -> void:
 	sun.light_energy = 1.3
 	add_child(sun)
 	var environment := Environment.new()
+	_environment = environment
 	environment.background_mode = Environment.BG_COLOR
 	environment.background_color = Color(0.55, 0.38, 0.22)
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
@@ -77,7 +85,16 @@ func _build_lighting() -> void:
 	add_child(world_environment)
 
 
+## Dark sky behind the globe, cardboard behind the sheet.
+func set_space(on: bool) -> void:
+	_environment.background_color = Color(0.02, 0.03, 0.07) if on else Color(0.55, 0.38, 0.22)
+
+
 func _unhandled_input(event: InputEvent) -> void:
+	if cinematic.active:
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			cinematic.skip()
+		return
 	if event is InputEventMouseButton and event.pressed:
 		match event.button_index:
 			MOUSE_BUTTON_LEFT:
@@ -95,6 +112,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_F10:
 		# Dev: fast-forward to test the progression.
 		Engine.time_scale = {1.0: 10.0, 10.0: 100.0}.get(Engine.time_scale, 1.0)
+	elif event is InputEventKey and event.pressed and event.keycode == KEY_F8:
+		# Dev: replay the zoom out, for clips.
+		play_zoom_out(_latest_producer())
 
 
 func _input(event: InputEvent) -> void:
@@ -105,16 +125,24 @@ func _input(event: InputEvent) -> void:
 func _process(delta: float) -> void:
 	clock += delta
 	RenderingServer.global_shader_parameter_set("pop_clock", clock)
+	cinematic.update(delta)
 	_update_camera(delta)
 	view.update_visible(camera)
+	hud.set_flash(cinematic.flash())
 
-	var ground := mouse_ground()
-	press_update(ground, delta)
-	var radius := economy.thumb_radius()
-	var tool_point := _press_point if _pressing else ground
-	var hover_center := SheetData.cell_position(SheetData.nearest_cell(tool_point)) if radius <= 0.0 else tool_point
-	RenderingServer.global_shader_parameter_set("pop_hover", Vector3(hover_center.x, hover_center.y, maxf(radius, 0.1)))
-	RenderingServer.global_shader_parameter_set("pop_press", press_amount())
+	if cinematic.active:
+		_pressing = false
+		_dragging = false
+		RenderingServer.global_shader_parameter_set("pop_hover", Vector3(0.0, 0.0, -1.0))
+		RenderingServer.global_shader_parameter_set("pop_press", 0.0)
+	else:
+		var ground := mouse_ground()
+		press_update(ground, delta)
+		var radius := economy.thumb_radius()
+		var tool_point := _press_point if _pressing else ground
+		var hover_center := SheetData.cell_position(SheetData.nearest_cell(tool_point)) if radius <= 0.0 else tool_point
+		RenderingServer.global_shader_parameter_set("pop_hover", Vector3(hover_center.x, hover_center.y, maxf(radius, 0.1)))
+		RenderingServer.global_shader_parameter_set("pop_press", press_amount())
 
 	for steamroller in steamrollers:
 		var swept := steamroller.advance(delta)
@@ -193,7 +221,27 @@ func buy(id: StringName) -> bool:
 		Economy.STEAMROLLER_WIDTH:
 			for steamroller in steamrollers:
 				steamroller.set_radius(economy.steamroller_radius())
+		_:
+			if economy.producer_count(id) == 1:
+				play_zoom_out(id)
+			else:
+				globe.set_producers(economy, clock)
 	return true
+
+
+## Zooms out to the globe to show a producer tier at work.
+func play_zoom_out(id: StringName) -> void:
+	if cinematic.active:
+		return
+	cinematic.play("%s joined in" % Hud.NAMES[id] if Hud.NAMES.has(id) else "")
+
+
+func _latest_producer() -> StringName:
+	var latest := &""
+	for producer in Economy.PRODUCERS:
+		if economy.producer_count(producer["id"]) > 0:
+			latest = producer["id"]
+	return latest
 
 
 func mouse_ground() -> Vector2:
@@ -207,15 +255,20 @@ func mouse_ground() -> Vector2:
 
 
 func _update_camera(delta: float) -> void:
+	if not cinematic.active:
+		_player_camera(delta)
+	camera.rotation = Vector3(-pitch, 0.0, 0.0)
+	camera.position = Vector3(focus.x, height, focus.y + height / tan(pitch))
+	camera.h_offset = randf_range(-1.0, 1.0) * fx.shake * 0.05 * height / START_HEIGHT
+	camera.v_offset = randf_range(-1.0, 1.0) * fx.shake * 0.05 * height / START_HEIGHT
+
+
+func _player_camera(delta: float) -> void:
 	var move := Vector2(
 		Input.get_axis(&"ui_left", &"ui_right") + float(Input.is_physical_key_pressed(KEY_D)) - float(Input.is_physical_key_pressed(KEY_A)),
 		Input.get_axis(&"ui_up", &"ui_down") + float(Input.is_physical_key_pressed(KEY_S)) - float(Input.is_physical_key_pressed(KEY_W)))
 	focus += move.limit_length(1.0) * PAN_SPEED * height * delta
 	height = lerpf(height, target_height, 1.0 - exp(-12.0 * delta)) if delta > 0.0 else target_height
-	camera.rotation = Vector3(-PITCH, 0.0, 0.0)
-	camera.position = Vector3(focus.x, height, focus.y + height / tan(PITCH))
-	camera.h_offset = randf_range(-1.0, 1.0) * fx.shake * 0.05 * height / START_HEIGHT
-	camera.v_offset = randf_range(-1.0, 1.0) * fx.shake * 0.05 * height / START_HEIGHT
 
 
 func _spawn_steamroller(start: Vector2, direction: Vector2) -> Steamroller:
@@ -255,6 +308,8 @@ func load_game() -> void:
 	for roller in save["steamrollers"]:
 		_spawn_steamroller(roller[0], roller[1])
 	view.clear()
+	# Born long ago: loaded sparks skip their intro.
+	globe.set_producers(economy, -1000.0)
 
 
 func reset() -> void:
@@ -269,6 +324,7 @@ func reset() -> void:
 	_dragging = false
 	target_height = START_HEIGHT
 	view.clear()
+	globe.set_producers(economy, clock)
 
 
 func _notification(what: int) -> void:

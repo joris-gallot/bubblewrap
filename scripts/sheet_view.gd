@@ -5,6 +5,9 @@ extends Node3D
 const MAX_BUILDS_PER_FRAME := 10
 const FLOATS_PER_INSTANCE := 16 # 12 transform + 4 custom data
 const BUBBLE_MATERIAL := preload("res://shaders/bubble.gdshader")
+const FLOOR_SHADER := preload("res://shaders/sheet_floor.gdshader")
+## Above this camera height the chunks are too many and too small: the floor paints the bubbles instead.
+const CHUNK_MAX_HEIGHT := 110.0
 const CHUNK_SIZE := Vector2(SheetData.CHUNK * SheetData.SPACING, SheetData.CHUNK * SheetData.ROW_STEP)
 
 var data: SheetData
@@ -14,6 +17,7 @@ var _template := PackedFloat32Array()
 var _mesh: SphereMesh
 var _material: ShaderMaterial
 var _floor: MeshInstance3D
+var _floor_material: ShaderMaterial
 
 
 func _ready() -> void:
@@ -42,11 +46,10 @@ func _ready() -> void:
 	_floor = MeshInstance3D.new()
 	var plane := PlaneMesh.new()
 	plane.size = Vector2.ONE
-	var floor_material := StandardMaterial3D.new()
 	# Cardboard under the sheet: transparent bubbles need a warm, darker backdrop to read.
-	floor_material.albedo_color = Color(0.55, 0.38, 0.22)
-	floor_material.roughness = 0.9
-	plane.material = floor_material
+	_floor_material = ShaderMaterial.new()
+	_floor_material.shader = FLOOR_SHADER
+	plane.material = _floor_material
 	_floor.mesh = plane
 	add_child(_floor)
 
@@ -55,6 +58,11 @@ func update_visible(camera: Camera3D) -> void:
 	var view := ground_rect(camera).grow(2.0)
 	_floor.position = Vector3(view.get_center().x, 0.0, view.get_center().y)
 	_floor.scale = Vector3(view.size.x, 1.0, view.size.y)
+	var far := camera.global_position.y > CHUNK_MAX_HEIGHT
+	_floor_material.set_shader_parameter("pattern", 1.0 if far else 0.0)
+	if far:
+		clear()
+		return
 
 	var first := Vector2i(floori(view.position.x / CHUNK_SIZE.x) - 1, floori(view.position.y / CHUNK_SIZE.y))
 	var last := Vector2i(floori(view.end.x / CHUNK_SIZE.x), floori(view.end.y / CHUNK_SIZE.y))

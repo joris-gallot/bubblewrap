@@ -7,6 +7,7 @@
 #   --steamrollers N, --wallet N, --thumb LEVEL, --mid-pop (shot taken 0.03 s after a big stroke).
 #   --press S (shot taken S seconds into a press at the center, below Game.PRESS_MAX).
 #   --producers N (owns one of each of the first N producer tiers).
+#   --zoom-out S (shot taken S seconds into the zoom out to the globe, see Cinematic for the timeline).
 # Uses its own save file and mutes sound.
 extends Node
 
@@ -59,6 +60,9 @@ func _ready() -> void:
 		var hold := float(_options["press"])
 		while game._press_time < hold:
 			await get_tree().process_frame
+	if _options.has("zoom-out"):
+		game.play_zoom_out(game._latest_producer())
+		await get_tree().create_timer(float(_options["zoom-out"])).timeout
 	if _options.has("mid-pop"):
 		game.pop_segment(Vector2(-4, -2), Vector2(4, -2), 1.6)
 		await get_tree().create_timer(0.03).timeout

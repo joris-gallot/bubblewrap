@@ -62,6 +62,21 @@ def crackle(rng, length=2.0, clicks_per_second=90):
     return samples
 
 
+def whoosh(rng, rising, length=1.4):
+    """Wind noise through a sweeping low-pass: up for the zoom out, down for the dive back."""
+    samples, low, band = [], 0.0, 0.0
+    n = int(length * RATE)
+    for i in range(n):
+        x = i / n
+        sweep = x if rising else 1.0 - x
+        cutoff = 0.01 + 0.25 * sweep ** 2
+        low += cutoff * (rng.uniform(-1, 1) - low)
+        band += 0.5 * (low - band)
+        env = math.sin(math.pi * x) ** 1.5
+        samples.append((low - band * 0.6) * env)
+    return samples
+
+
 def buy():
     """Two rising soft tones."""
     samples = []
@@ -81,6 +96,8 @@ def main():
     write("buy.wav", buy())
     # Loops: its .import sets edit/loop_mode=2 (forward).
     write("crackle.wav", crackle(rng))
+    write("whoosh_up.wav", whoosh(rng, True))
+    write("whoosh_down.wav", whoosh(rng, False))
 
 
 if __name__ == "__main__":

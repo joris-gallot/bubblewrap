@@ -27,6 +27,8 @@ var _ages := PackedFloat32Array()
 var _multimesh: MultiMesh
 var _streams: Array[AudioStream] = []
 var _buy_stream: AudioStream
+var _whoosh_up: AudioStream
+var _whoosh_down: AudioStream
 var _voices: Array[AudioStreamPlayer] = []
 var _next_voice := 0
 var _sound_budget := 0.0
@@ -60,6 +62,8 @@ func _ready() -> void:
 	for i in SOUND_COUNT:
 		_streams.append(load("res://assets/sounds/pop_%d.wav" % i))
 	_buy_stream = load("res://assets/sounds/buy.wav")
+	_whoosh_up = load("res://assets/sounds/whoosh_up.wav")
+	_whoosh_down = load("res://assets/sounds/whoosh_down.wav")
 	for i in VOICES:
 		var voice := AudioStreamPlayer.new()
 		add_child(voice)
@@ -94,6 +98,10 @@ func burst(cells: Array[Vector2i], camera: Camera3D) -> void:
 
 func play_buy() -> void:
 	_play(_buy_stream, 1.0, -4.0)
+
+
+func play_whoosh(up: bool) -> void:
+	_play(_whoosh_up if up else _whoosh_down, 1.0, -6.0)
 
 
 func _process(delta: float) -> void:

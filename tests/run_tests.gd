@@ -13,6 +13,8 @@ const TESTS: Array[StringName] = [
 	&"test_counter_stops_at_the_world_total",
 	&"test_shop_reveals_producers_one_tier_at_a_time",
 	&"test_pacing_stays_in_target",
+	&"test_first_producer_zooms_out_to_the_globe_and_back",
+	&"test_a_click_skips_the_zoom_out",
 	&"test_click_pops_and_pays",
 	&"test_press_squeezes_then_release_bursts",
 	&"test_holding_bursts_on_its_own",
@@ -169,6 +171,52 @@ func test_pacing_stays_in_target() -> void:
 	check(result["first"].get(Economy.STEAMROLLER, INF) < 5 * 60.0, "first steamroller within 5 min")
 	for producer in Economy.PRODUCERS:
 		check(result["first"].has(producer["id"]), "%s gets bought" % producer["id"])
+
+
+func _run_cinematic(game: Game, seconds: float) -> void:
+	var step := 1.0 / 30.0
+	var elapsed := 0.0
+	while elapsed < seconds:
+		game.cinematic.update(step)
+		elapsed += step
+
+
+func test_first_producer_zooms_out_to_the_globe_and_back() -> void:
+	var game := await _new_game()
+	var start_height := game.height
+	game.economy.steamrollers = 1
+	game.economy.add_pops(Economy.PRODUCERS[0]["cost"] * 3)
+	check(game.buy(&"elephants") and game.cinematic.active, "the first herd starts the zoom out")
+	_run_cinematic(game, Cinematic.GLOBE_START * 0.5)
+	check(game.height > start_height * 2.0 and game.camera.current, "climbing above the sheet")
+	_run_cinematic(game, Cinematic.GLOBE_START * 0.5 + 0.5)
+	check(game.cinematic.in_globe() and game.globe.visible and game.globe.camera.current, "the globe is on screen")
+	check(game.globe.spark_count() == Globe.SPARKS_PER_UNIT, "one herd of sparks (%d)" % game.globe.spark_count())
+	_run_cinematic(game, Cinematic.TOTAL)
+	check(not game.cinematic.active and not game.globe.visible and game.camera.current, "back on the sheet")
+	check(is_equal_approx(game.height, start_height) and game.pitch == Game.PITCH, "camera back where it was")
+	game.buy(&"elephants")
+	check(not game.cinematic.active, "a second herd does not zoom out again")
+	check(game.globe.spark_count() == 2 * Globe.SPARKS_PER_UNIT, "but adds its sparks")
+	game.queue_free()
+
+
+func test_a_click_skips_the_zoom_out() -> void:
+	var game := await _new_game()
+	game.economy.producers[&"elephants"] = 1
+	game.play_zoom_out(&"elephants")
+	_run_cinematic(game, 0.2)
+	game.cinematic.skip()
+	_run_cinematic(game, 0.1)
+	check(not game.cinematic.active and game.camera.current, "a click during the climb ends it")
+	game.play_zoom_out(&"elephants")
+	_run_cinematic(game, Cinematic.GLOBE_START + 0.3)
+	game.cinematic.skip()
+	_run_cinematic(game, 0.1)
+	check(game.cinematic.active and not game.globe.visible and game.camera.current, "a click in orbit cuts to the descent")
+	_run_cinematic(game, Cinematic.DESCEND)
+	check(not game.cinematic.active, "and lands")
+	game.queue_free()
 
 
 func test_click_pops_and_pays() -> void:
