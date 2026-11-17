@@ -12,6 +12,10 @@ const VOICES := 20
 ## Sounds per second at most, so a rolling pin crackles instead of turning into noise.
 const SOUND_RATE := 40.0
 const MAX_SOUNDS_PER_BURST := 3
+## The crackle loop fades in above this many visible pops per second and is full at CRACKLE_FULL_RATE.
+const CRACKLE_MIN_RATE := 6.0
+const CRACKLE_FULL_RATE := 80.0
+const CRACKLE_MAX_DB := -7.0
 
 var muted := false
 var shake := 0.0
@@ -26,6 +30,11 @@ var _buy_stream: AudioStream
 var _voices: Array[AudioStreamPlayer] = []
 var _next_voice := 0
 var _sound_budget := 0.0
+var _crackle: AudioStreamPlayer
+var _crackle_level := 0.0
+var _pending_pops := 0
+## Visible pops per second, smoothed.
+var pop_rate := 0.0
 
 
 func _ready() -> void:
@@ -55,6 +64,9 @@ func _ready() -> void:
 		var voice := AudioStreamPlayer.new()
 		add_child(voice)
 		_voices.append(voice)
+	_crackle = AudioStreamPlayer.new()
+	_crackle.stream = load("res://assets/sounds/crackle.wav")
+	add_child(_crackle)
 
 
 func burst(cells: Array[Vector2i], camera: Camera3D) -> void:
@@ -71,6 +83,7 @@ func burst(cells: Array[Vector2i], camera: Camera3D) -> void:
 			_spawn_fleck(world)
 	if seen == 0:
 		return
+	_pending_pops += seen
 	shake = minf(shake + 0.02 * seen, 0.35)
 	var sounds := mini(mini(seen, MAX_SOUNDS_PER_BURST), floori(_sound_budget))
 	for i in sounds:
@@ -86,6 +99,7 @@ func play_buy() -> void:
 func _process(delta: float) -> void:
 	_sound_budget = minf(_sound_budget + SOUND_RATE * delta, MAX_SOUNDS_PER_BURST * 2.0)
 	shake = move_toward(shake, 0.0, delta * 1.5)
+	_update_crackle(delta)
 	var i := 0
 	while i < _ages.size():
 		_ages[i] += delta
@@ -114,6 +128,24 @@ func _process(delta: float) -> void:
 		buffer[o + 11] = _positions[f].z
 	_multimesh.buffer = buffer
 	_multimesh.visible_instance_count = _ages.size()
+
+
+func _update_crackle(delta: float) -> void:
+	if delta <= 0.0:
+		return
+	pop_rate = lerpf(pop_rate, _pending_pops / delta, 1.0 - exp(-6.0 * delta))
+	_pending_pops = 0
+	var target := clampf((pop_rate - CRACKLE_MIN_RATE) / (CRACKLE_FULL_RATE - CRACKLE_MIN_RATE), 0.0, 1.0)
+	# Quick to rise so a drag crackles at once, slower to fade so it does not stutter.
+	_crackle_level = move_toward(_crackle_level, target, delta * (8.0 if target > _crackle_level else 3.0))
+	if muted or _crackle_level <= 0.01:
+		if _crackle.playing:
+			_crackle.stop()
+		return
+	if not _crackle.playing:
+		_crackle.play(randf() * _crackle.stream.get_length())
+	_crackle.volume_db = CRACKLE_MAX_DB + linear_to_db(_crackle_level)
+	_crackle.pitch_scale = 0.95 + 0.2 * _crackle_level
 
 
 func _spawn_fleck(at: Vector3) -> void:

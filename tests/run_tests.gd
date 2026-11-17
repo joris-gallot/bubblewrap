@@ -10,6 +10,9 @@ const TESTS: Array[StringName] = [
 	&"test_capsule_pops_exactly_the_bubbles_in_reach",
 	&"test_economy_prices_and_purchases",
 	&"test_click_pops_and_pays",
+	&"test_press_squeezes_then_release_bursts",
+	&"test_holding_bursts_on_its_own",
+	&"test_rolling_pin_rolls_once_moved",
 	&"test_steamroller_pops_while_driving",
 	&"test_save_round_trip",
 ]
@@ -122,6 +125,47 @@ func test_click_pops_and_pays() -> void:
 	var instance: MultiMeshInstance3D = game.view._loaded.get(SheetData.chunk_of(cell))
 	# The headless renderer keeps no MultiMesh data: check the bubble look with tools/capture.tscn.
 	check(instance != null, "the chunk under the camera is drawn")
+	game.queue_free()
+
+
+func test_press_squeezes_then_release_bursts() -> void:
+	var game := await _new_game()
+	game.press_begin(Vector2(2, 2))
+	game.press_update(Vector2(2, 2), 0.05)
+	check(game.economy.popped == 0, "a held press does not pop yet")
+	check(game.press_amount() > 0.0 and game.press_amount() < 1.0, "the bubble is being squeezed (%f)" % game.press_amount())
+	game.press_end()
+	check(game.economy.popped == 1, "release bursts the pressed bubble")
+	check(game.press_amount() == 0.0, "nothing squeezed after release")
+	game.press_end()
+	check(game.economy.popped == 1, "a second release pops nothing")
+	game.queue_free()
+
+
+func test_holding_bursts_on_its_own() -> void:
+	var game := await _new_game()
+	game.press_begin(Vector2(2, 2))
+	game.press_update(Vector2(2, 2), Game.PRESS_MAX)
+	check(game.economy.popped == 1, "holding long enough bursts")
+	game.press_end()
+	check(game.economy.popped == 1, "the release after it pops nothing more")
+	game.queue_free()
+
+
+func test_rolling_pin_rolls_once_moved() -> void:
+	var game := await _new_game()
+	game.economy.rolling_pin = true
+	game.press_begin(Vector2(0, 0))
+	game.press_update(Vector2(0.1, 0), 0.01)
+	check(game.economy.popped == 0, "a tiny wobble still squeezes")
+	game.press_update(Vector2(6, 0), 0.01)
+	check(game.economy.popped >= 6, "moving rolls a line (%d)" % game.economy.popped)
+	game.press_update(Vector2(12, 0), 0.01)
+	var rolled := game.economy.popped
+	check(rolled >= 12, "keeps rolling (%d)" % rolled)
+	game.press_end()
+	game.press_update(Vector2(20, 0), 0.01)
+	check(game.economy.popped == rolled, "release stops rolling")
 	game.queue_free()
 
 

@@ -12,6 +12,13 @@ const ZOOM_STEP := 1.15
 const AUTOSAVE_SECONDS := 15.0
 ## Rolling pin reach when the thumb is still tiny, so a drag pops a continuous line.
 const MIN_DRAG_RADIUS := 0.45
+## A press squeezes, the release bursts; holding this long bursts on its own.
+const PRESS_MAX := 0.35
+## Share of the squeeze reached almost at once, the rest builds up until PRESS_MAX.
+const PRESS_DENT := 0.6
+const PRESS_DENT_TIME := 0.06
+## With the rolling pin, moving this far while pressed starts rolling.
+const ROLL_START_DISTANCE := 0.35
 ## Golden angle: consecutive steamrollers leave in well spread directions.
 const STEAMROLLER_ANGLE := 2.399963
 
@@ -26,6 +33,9 @@ var height := START_HEIGHT
 var target_height := START_HEIGHT
 var steamrollers: Array[Steamroller] = []
 
+var _pressing := false
+var _press_point := Vector2.ZERO
+var _press_time := 0.0
 var _dragging := false
 var _last_drag := Vector2.ZERO
 var _autosave := 0.0
@@ -71,10 +81,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed:
 		match event.button_index:
 			MOUSE_BUTTON_LEFT:
-				var ground := mouse_ground()
-				pop_segment(ground, ground, economy.thumb_radius())
-				_dragging = economy.rolling_pin
-				_last_drag = ground
+				press_begin(mouse_ground())
 			MOUSE_BUTTON_WHEEL_UP:
 				target_height = maxf(target_height / ZOOM_STEP, MIN_HEIGHT)
 			MOUSE_BUTTON_WHEEL_DOWN:
@@ -89,7 +96,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
-		_dragging = false
+		press_end()
 
 
 func _process(delta: float) -> void:
@@ -99,12 +106,12 @@ func _process(delta: float) -> void:
 	view.update_visible(camera)
 
 	var ground := mouse_ground()
-	if _dragging:
-		pop_segment(_last_drag, ground, maxf(economy.thumb_radius(), MIN_DRAG_RADIUS))
-		_last_drag = ground
+	press_update(ground, delta)
 	var radius := economy.thumb_radius()
-	var hover_center := SheetData.cell_position(SheetData.nearest_cell(ground)) if radius <= 0.0 else ground
+	var tool_point := _press_point if _pressing else ground
+	var hover_center := SheetData.cell_position(SheetData.nearest_cell(tool_point)) if radius <= 0.0 else tool_point
 	RenderingServer.global_shader_parameter_set("pop_hover", Vector3(hover_center.x, hover_center.y, maxf(radius, 0.1)))
+	RenderingServer.global_shader_parameter_set("pop_press", press_amount())
 
 	for steamroller in steamrollers:
 		var swept := steamroller.advance(delta)
@@ -115,6 +122,49 @@ func _process(delta: float) -> void:
 	if _autosave >= AUTOSAVE_SECONDS:
 		_autosave = 0.0
 		save_game()
+
+
+func press_begin(ground: Vector2) -> void:
+	_pressing = true
+	_press_point = ground
+	_press_time = 0.0
+
+
+func press_update(ground: Vector2, delta: float) -> void:
+	if _dragging:
+		pop_segment(_last_drag, ground, maxf(economy.thumb_radius(), MIN_DRAG_RADIUS))
+		_last_drag = ground
+		return
+	if not _pressing:
+		return
+	_press_time += delta
+	var rolled := economy.rolling_pin and ground.distance_to(_press_point) > ROLL_START_DISTANCE
+	if not rolled and _press_time < PRESS_MAX:
+		return
+	_burst_press()
+	if economy.rolling_pin:
+		_dragging = true
+		_last_drag = _press_point
+		press_update(ground, 0.0)
+
+
+func press_end() -> void:
+	if _pressing:
+		_burst_press()
+	_dragging = false
+
+
+## Squeeze of the pressed bubbles, 0 when nothing is held.
+func press_amount() -> float:
+	if not _pressing:
+		return 0.0
+	var dent := minf(_press_time / PRESS_DENT_TIME, 1.0) * PRESS_DENT
+	return dent + (1.0 - PRESS_DENT) * minf(_press_time / PRESS_MAX, 1.0)
+
+
+func _burst_press() -> void:
+	_pressing = false
+	pop_segment(_press_point, _press_point, economy.thumb_radius())
 
 
 ## Pops around a segment (a point when a == b); radius 0 pops the single nearest bubble.
@@ -211,6 +261,8 @@ func reset() -> void:
 		steamroller.queue_free()
 	steamrollers.clear()
 	focus = Vector2.ZERO
+	_pressing = false
+	_dragging = false
 	target_height = START_HEIGHT
 	view.clear()
 

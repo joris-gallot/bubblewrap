@@ -35,3 +35,7 @@ pop_hover={
 "type": "vec3",
 "value": Vector3(0, 0, -1)
 }
+pop_press={
+"type": "float",
+"value": 0.0
+}

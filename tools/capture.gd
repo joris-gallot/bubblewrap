@@ -5,6 +5,7 @@
 # Options: --out PATH, --size WxH, --time S (wait before the shot, default 0.6),
 #   --height H (camera height), --pops N (random strokes near the center), --radius R (stroke radius),
 #   --steamrollers N, --wallet N, --thumb LEVEL, --mid-pop (shot taken 0.03 s after a big stroke).
+#   --press S (shot taken S seconds into a press at the center, below Game.PRESS_MAX).
 # Uses its own save file and mutes sound.
 extends Node
 
@@ -50,6 +51,11 @@ func _ready() -> void:
 		var a := Vector2(rng.randf_range(-12, 12), rng.randf_range(-12, 4))
 		game.pop_segment(a, a + Vector2.from_angle(rng.randf() * TAU) * rng.randf_range(0, 6), radius)
 	await get_tree().create_timer(float(_options.get("time", "0.6"))).timeout
+	if _options.has("press"):
+		game.press_begin(Vector2(0, -2))
+		var hold := float(_options["press"])
+		while game._press_time < hold:
+			await get_tree().process_frame
 	if _options.has("mid-pop"):
 		game.pop_segment(Vector2(-4, -2), Vector2(4, -2), 1.6)
 		await get_tree().create_timer(0.03).timeout

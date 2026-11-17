@@ -39,6 +39,29 @@ def pop(rng):
     return samples
 
 
+def crackle(rng, length=2.0, clicks_per_second=90):
+    """A seamless loop of tiny pops over a faint crinkle, faded in by PopFx when many pops land."""
+    n = int(length * RATE)
+    samples = [0.0] * n
+    prev = 0.0
+    for i in range(n):
+        white = rng.uniform(-1, 1)
+        samples[i] = (white - prev) * 0.02
+        prev = white
+    for _ in range(int(length * clicks_per_second)):
+        start = rng.randrange(n)
+        # Mostly faint ticks with a few louder snaps.
+        amp = 0.15 + 0.85 * rng.random() ** 3
+        ring_hz = rng.uniform(2000, 5000)
+        low = 0.0
+        for j in range(int(0.012 * RATE)):
+            t = j / RATE
+            low += 0.5 * (rng.uniform(-1, 1) - low)
+            tick = low * math.exp(-t / 0.0012) + math.sin(2 * math.pi * ring_hz * t) * math.exp(-t / 0.003) * 0.3
+            samples[(start + j) % n] += tick * amp
+    return samples
+
+
 def buy():
     """Two rising soft tones."""
     samples = []
@@ -56,6 +79,8 @@ def main():
     for i in range(POP_VARIANTS):
         write(f"pop_{i}.wav", pop(rng))
     write("buy.wav", buy())
+    # Loops: its .import sets edit/loop_mode=2 (forward).
+    write("crackle.wav", crackle(rng))
 
 
 if __name__ == "__main__":
