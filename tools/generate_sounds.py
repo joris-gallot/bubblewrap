@@ -77,6 +77,35 @@ def whoosh(rng, rising, length=1.4):
     return samples
 
 
+def combo():
+    """A short bright blip with a quick upward bend; PopFx pitches it up per combo level."""
+    samples, phase = [], 0.0
+    length = 0.12
+    for i in range(int(length * RATE)):
+        t = i / RATE
+        hz = 880 * (1 + 0.5 * min(1.0, t / 0.05))
+        phase += 2 * math.pi * hz / RATE
+        env = min(1.0, i / 150) * math.exp(-t / 0.05)
+        samples.append((math.sin(phase) + 0.25 * math.sin(3 * phase)) * env)
+    return samples
+
+
+def golden():
+    """A fast rising arpeggio with a shimmering tail."""
+    notes = [1046.5, 1318.5, 1568.0, 2093.0]
+    step = 0.06
+    n = int((step * len(notes) + 0.6) * RATE)
+    samples = [0.0] * n
+    for k, hz in enumerate(notes):
+        start = int(k * step * RATE)
+        for i in range(n - start):
+            t = i / RATE
+            env = min(1.0, i / 100) * math.exp(-t / 0.25)
+            shimmer = 1 + 0.15 * math.sin(2 * math.pi * 9 * t)
+            samples[start + i] += (math.sin(2 * math.pi * hz * t) + 0.3 * math.sin(4 * math.pi * hz * t)) * env * shimmer
+    return samples
+
+
 def buy():
     """Two rising soft tones."""
     samples = []
@@ -98,6 +127,8 @@ def main():
     write("crackle.wav", crackle(rng))
     write("whoosh_up.wav", whoosh(rng, True))
     write("whoosh_down.wav", whoosh(rng, False))
+    write("combo.wav", combo())
+    write("golden.wav", golden())
 
 
 if __name__ == "__main__":

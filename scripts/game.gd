@@ -21,6 +21,9 @@ const PRESS_DENT_TIME := 0.06
 const ROLL_START_DISTANCE := 0.35
 ## Golden angle: consecutive steamrollers leave in well spread directions.
 const STEAMROLLER_ANGLE := 2.399963
+## A lucky golden bubble pays this many seconds of production, and at least LUCKY_MIN.
+const LUCKY_SECONDS := 60.0
+const LUCKY_MIN := 500
 
 @export var save_path := "user://save.dat"
 @export var muted := false
@@ -33,6 +36,7 @@ var height := START_HEIGHT
 var target_height := START_HEIGHT
 var pitch := PITCH
 var steamrollers: Array[Steamroller] = []
+var combo := Combo.new()
 
 var _pressing := false
 var _press_point := Vector2.ZERO
@@ -41,6 +45,7 @@ var _dragging := false
 var _last_drag := Vector2.ZERO
 var _autosave := 0.0
 var _environment: Environment
+var _combo_level := 0
 
 @onready var camera: Camera3D = $Camera3D
 @onready var view: SheetView = $SheetView
@@ -49,6 +54,7 @@ var _environment: Environment
 @onready var _steamroller_root: Node3D = $Steamrollers
 var globe: Globe
 var cinematic: Cinematic
+var golden: GoldenBubble
 
 
 func _ready() -> void:
@@ -58,6 +64,8 @@ func _ready() -> void:
 	globe = Globe.new()
 	add_child(globe)
 	cinematic = Cinematic.new(self)
+	golden = GoldenBubble.new()
+	add_child(golden)
 	_build_lighting()
 	load_game()
 	_update_camera(0.0)
@@ -144,12 +152,18 @@ func _process(delta: float) -> void:
 		RenderingServer.global_shader_parameter_set("pop_hover", Vector3(hover_center.x, hover_center.y, maxf(radius, 0.1)))
 		RenderingServer.global_shader_parameter_set("pop_press", press_amount())
 
+	_update_combo(delta)
+	if not cinematic.active and economy.popped >= GoldenBubble.FIRST_AFTER_POPS and golden.wants_to_spawn(delta):
+		var spot := _golden_spot()
+		if not spot.is_empty():
+			golden.show_at(spot[0])
+
 	for steamroller in steamrollers:
 		var swept := steamroller.advance(delta)
 		pop_segment(swept[0], swept[1], steamroller.radius)
-	economy.produce(delta)
+	economy.produce(delta, combo.multiplier())
 
-	hud.refresh(economy, delta)
+	hud.refresh(economy, delta, combo)
 	_autosave += delta
 	if _autosave >= AUTOSAVE_SECONDS:
 		_autosave = 0.0
@@ -164,7 +178,8 @@ func press_begin(ground: Vector2) -> void:
 
 func press_update(ground: Vector2, delta: float) -> void:
 	if _dragging:
-		pop_segment(_last_drag, ground, maxf(economy.thumb_radius(), MIN_DRAG_RADIUS))
+		if pop_segment(_last_drag, ground, maxf(economy.thumb_radius(), MIN_DRAG_RADIUS), true) > 0:
+			combo.feed(Combo.DRAG_FILL_PER_SECOND * delta)
 		_last_drag = ground
 		return
 	if not _pressing:
@@ -196,18 +211,60 @@ func press_amount() -> float:
 
 func _burst_press() -> void:
 	_pressing = false
-	pop_segment(_press_point, _press_point, economy.thumb_radius())
+	if pop_segment(_press_point, _press_point, economy.thumb_radius(), true) > 0:
+		combo.feed(Combo.CLICK_FILL)
 
 
 ## Pops around a segment (a point when a == b); radius 0 pops the single nearest bubble.
-func pop_segment(a: Vector2, b: Vector2, radius: float) -> int:
+## Every popped bubble earns the combo multiplier; only the player's own pops can claim a golden bubble.
+func pop_segment(a: Vector2, b: Vector2, radius: float, by_hand := false) -> int:
 	var cells := data.pop_nearest(a) if radius <= 0.0 else data.pop_capsule(a, b, radius)
 	if cells.is_empty():
 		return 0
 	view.mark_popped(cells, clock)
 	fx.burst(cells, camera)
-	economy.add_pops(cells.size())
+	economy.add_pops(cells.size() * combo.multiplier())
+	if golden.active and cells.has(golden.cell):
+		if by_hand:
+			claim_golden()
+		else:
+			golden.leave()
 	return cells.size()
+
+
+## Pays out the golden bubble: a lump of pops or a frenzy. kind forces one, for tests and captures.
+func claim_golden(kind: StringName = &"") -> void:
+	var p := SheetData.cell_position(golden.cell)
+	golden.leave()
+	fx.golden_burst(Vector3(p.x, 0.2, p.y))
+	if kind.is_empty():
+		kind = [&"lucky", &"frenzy"].pick_random()
+	if kind == &"frenzy":
+		combo.start_frenzy()
+		hud.show_caption("Frenzy! Every pop x%d" % Combo.FRENZY_MULTIPLIER, 2.5)
+	else:
+		var lucky := economy.add_pops(maxi(roundi(economy.production_rate() * LUCKY_SECONDS), LUCKY_MIN))
+		hud.show_caption("Lucky! +%s pops" % Economy.format_count(lucky), 2.5)
+
+
+func _update_combo(delta: float) -> void:
+	combo.update(delta)
+	var level := combo.level()
+	if level > _combo_level:
+		fx.play_combo(level)
+	_combo_level = level
+	fx.combo_level = level
+
+
+## A random unpopped cell in the open middle of the screen, away from the counter and the shop. [] if none found.
+func _golden_spot() -> Array:
+	var size := get_viewport().get_visible_rect().size
+	for attempt in 8:
+		var screen := Vector2(randf_range(0.15, 0.65) * size.x, randf_range(0.3, 0.85) * size.y)
+		var cell := SheetData.nearest_cell(screen_ground(screen))
+		if not data.is_popped(cell):
+			return [cell]
+	return []
 
 
 func buy(id: StringName) -> bool:
@@ -245,9 +302,12 @@ func _latest_producer() -> StringName:
 
 
 func mouse_ground() -> Vector2:
-	var mouse := get_viewport().get_mouse_position()
-	var origin := camera.project_ray_origin(mouse)
-	var normal := camera.project_ray_normal(mouse)
+	return screen_ground(get_viewport().get_mouse_position())
+
+
+func screen_ground(screen: Vector2) -> Vector2:
+	var origin := camera.project_ray_origin(screen)
+	var normal := camera.project_ray_normal(screen)
 	if normal.y > -0.01:
 		return focus
 	var hit := origin + normal * (-origin.y / normal.y)
@@ -322,6 +382,8 @@ func reset() -> void:
 	focus = Vector2.ZERO
 	_pressing = false
 	_dragging = false
+	combo = Combo.new()
+	golden.leave()
 	target_height = START_HEIGHT
 	view.clear()
 	globe.set_producers(economy, clock)

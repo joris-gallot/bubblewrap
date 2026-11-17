@@ -19,6 +19,8 @@ const CRACKLE_MAX_DB := -7.0
 
 var muted := false
 var shake := 0.0
+## Pops sound a little higher at each combo level.
+var combo_level := 0
 
 var _positions := PackedVector3Array()
 var _velocities := PackedVector3Array()
@@ -29,6 +31,9 @@ var _streams: Array[AudioStream] = []
 var _buy_stream: AudioStream
 var _whoosh_up: AudioStream
 var _whoosh_down: AudioStream
+var _combo_stream: AudioStream
+var _golden_stream: AudioStream
+var _gold_material: StandardMaterial3D
 var _voices: Array[AudioStreamPlayer] = []
 var _next_voice := 0
 var _sound_budget := 0.0
@@ -64,6 +69,15 @@ func _ready() -> void:
 	_buy_stream = load("res://assets/sounds/buy.wav")
 	_whoosh_up = load("res://assets/sounds/whoosh_up.wav")
 	_whoosh_down = load("res://assets/sounds/whoosh_down.wav")
+	_combo_stream = load("res://assets/sounds/combo.wav")
+	_golden_stream = load("res://assets/sounds/golden.wav")
+	_gold_material = StandardMaterial3D.new()
+	_gold_material.albedo_color = Color(1.0, 0.8, 0.25)
+	_gold_material.metallic = 0.8
+	_gold_material.roughness = 0.25
+	_gold_material.emission_enabled = true
+	_gold_material.emission = Color(1.0, 0.6, 0.1)
+	_gold_material.emission_energy_multiplier = 1.5
 	for i in VOICES:
 		var voice := AudioStreamPlayer.new()
 		add_child(voice)
@@ -93,11 +107,44 @@ func burst(cells: Array[Vector2i], camera: Camera3D) -> void:
 	for i in sounds:
 		_sound_budget -= 1.0
 		# Bigger bursts sound a bit lower and louder, like a fistful of bubbles.
-		_play(_streams.pick_random(), randf_range(0.85, 1.25) - minf(seen, 30) * 0.006, -6.0 + minf(seen, 20) * 0.2)
+		var pitch := randf_range(0.85, 1.25) - minf(seen, 30) * 0.006 + combo_level * 0.06
+		_play(_streams.pick_random(), pitch, -6.0 + minf(seen, 20) * 0.2)
 
 
 func play_buy() -> void:
 	_play(_buy_stream, 1.0, -4.0)
+
+
+func play_combo(level: int) -> void:
+	_play(_combo_stream, 1.0 + 0.2 * level, -5.0)
+
+
+## Gold confetti, a chime and a kick of shake when a golden bubble is claimed.
+func golden_burst(at: Vector3) -> void:
+	_play(_golden_stream, 1.0, -3.0)
+	shake = minf(shake + 0.3, 0.6)
+	var particles := CPUParticles3D.new()
+	var fleck := BoxMesh.new()
+	fleck.size = Vector3(0.1, 0.02, 0.1)
+	fleck.material = _gold_material
+	particles.mesh = fleck
+	particles.one_shot = true
+	particles.amount = 90
+	particles.lifetime = 1.0
+	particles.explosiveness = 1.0
+	particles.direction = Vector3.UP
+	particles.spread = 65.0
+	particles.initial_velocity_min = 3.0
+	particles.initial_velocity_max = 7.5
+	particles.gravity = Vector3(0, -12, 0)
+	particles.angular_velocity_min = -720.0
+	particles.angular_velocity_max = 720.0
+	particles.scale_amount_min = 0.6
+	particles.scale_amount_max = 1.4
+	particles.position = at
+	add_child(particles)
+	particles.emitting = true
+	particles.finished.connect(particles.queue_free)
 
 
 func play_whoosh(up: bool) -> void:

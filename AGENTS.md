@@ -13,7 +13,7 @@ Pop all the bubble wrap in the world: an endless sheet, a counter of the 10,000,
 
 Question: is popping satisfying, and does the upgrade loop pull you forward?
 
-Done: endless hex sheet, finger click (press squeezes, release bursts), bigger thumb (radius), rolling pin (hold and drag), steamrollers (drive outward forever, wider drums), seven producer tiers that pop elsewhere on Earth (elephants to pulling the Moon closer), world counter that stops at the world total, zoom out to the bubble-wrapped globe when a producer tier joins in, save.
+Done: endless hex sheet, finger click (press squeezes, release bursts), bigger thumb (radius), rolling pin (hold and drag), steamrollers (drive outward forever, wider drums), seven producer tiers that pop elsewhere on Earth (elephants to pulling the Moon closer), world counter that stops at the world total, zoom out to the bubble-wrapped globe when a producer tier joins in, combo multiplier fed by popping by hand (rolling feeds it fastest), golden bubbles (lucky lump or frenzy), save.
 
 ## How it is built
 
@@ -22,8 +22,9 @@ Done: endless hex sheet, finger click (press squeezes, release bursts), bigger t
 - `SheetView`: one MultiMesh per visible chunk, recycled while the camera moves. Instance custom data `(popped, pop time)` drives `shaders/bubble.gdshader`; the global shader uniforms `pop_clock`, `pop_hover` and `pop_press` (squeeze while the button is held) come from `Game`.
 - `SheetView` hides its chunks above `CHUNK_MAX_HEIGHT`; the floor shader (`shaders/sheet_floor.gdshader`) then paints the bubbles. Popped bubbles are not shown from that high. Shader colors are linear: use `source_color` uniforms for sRGB values.
 - `Cinematic`: the zoom out timeline (climb, cut to `Globe`, hold, dive, descend), driven by `Game` each frame. A click skips, F8 replays it (dev, for clips). `Globe` sits far below the sheet with its own camera; one spark per producer unit.
+- `Combo`: a meter fed by hand pops in `Game`, its multiplier applies to every pop (hand, steamrollers, producers). `GoldenBubble`: spawns on screen now and then; only a hand pop claims it (`Game.claim_golden`), a steamroller just crushes it.
 - `Economy`: prices and upgrades, data in constants. One popped bubble = one pop to spend; spending never lowers the popped counter. `PRODUCERS` add pops per second without touching `SheetData` (10^13 bubbles cannot be stored).
-- Pacing: `godot --headless --path . res://tools/balance.tscn` simulates a greedy player on the real `Economy` and prints when each upgrade is first bought. Target: first steamroller within minutes, Earth emptied in about 2.5 h (guarded by `test_pacing_stays_in_target`). F10 in game cycles time x1/x10/x100 for testing.
+- Pacing: `godot --headless --path . res://tools/balance.tscn` simulates a greedy player on the real `Economy` and prints when each upgrade is first bought. Target, for a player who never combos: first steamroller within minutes, Earth emptied in about 2.5 h (guarded by `test_pacing_stays_in_target`). F10 in game cycles time x1/x10/x100 for testing.
 - `PopFx`: flecks, sounds (rate-limited, plus a `crackle.wav` loop faded in by the visible pop rate) and shake, only for pops the camera sees.
 - Sounds are synthesized by `python3 tools/generate_sounds.py` into `assets/sounds/`.
 - Save: `user://save.dat`, zstd-compressed `store_var`. No compatibility during development: bump `Game.SAVE_VERSION` and older saves start over. F9 resets the save.

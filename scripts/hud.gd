@@ -30,6 +30,9 @@ const DESCRIPTIONS := {
 	&"tectonic_plates": "Continents squeeze it flat",
 	&"moon": "The tides do the rest",
 }
+## Combo text color per level: cool when idle, hotter as it climbs.
+const COMBO_COLORS: Array[Color] = [Color(1, 1, 1), Color(1.0, 0.92, 0.45), Color(1.0, 0.62, 0.2), Color(1.0, 0.3, 0.2)]
+const FRENZY_COLOR := Color(1.0, 0.82, 0.25)
 ## Seconds of history behind the pops per second display.
 const RATE_WINDOW := 1.0
 
@@ -41,6 +44,12 @@ var _hint_label: Label
 var _caption_label: Label
 var _caption_tween: Tween
 var _flash: ColorRect
+var _combo_box: Control
+var _combo_label: Label
+var _combo_bar: ProgressBar
+var _combo_fill: StyleBoxFlat
+var _combo_punch: Tween
+var _shown_multiplier := 1
 var _buttons: Dictionary[StringName, Button] = {}
 var _punch: Tween
 var _shown_popped := -1
@@ -65,6 +74,29 @@ func _ready() -> void:
 	_label(20, counter).text = "BUBBLES POPPED"
 	_left_label = _label(18, counter)
 	_left_label.modulate = Color(1, 1, 1, 0.75)
+
+	# Kept in the layout at zero alpha, so the counter does not jump when a combo starts.
+	_combo_box = VBoxContainer.new()
+	_combo_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_combo_box.modulate.a = 0.0
+	counter.add_child(_combo_box)
+	_combo_label = _label(38, _combo_box)
+	var bar_holder := CenterContainer.new()
+	bar_holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_combo_box.add_child(bar_holder)
+	_combo_bar = ProgressBar.new()
+	_combo_bar.custom_minimum_size = Vector2(200, 8)
+	_combo_bar.show_percentage = false
+	_combo_bar.max_value = 1.0
+	_combo_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var bar_background := StyleBoxFlat.new()
+	bar_background.bg_color = Color(0.08, 0.12, 0.2, 0.6)
+	bar_background.set_corner_radius_all(4)
+	_combo_fill = StyleBoxFlat.new()
+	_combo_fill.set_corner_radius_all(4)
+	_combo_bar.add_theme_stylebox_override("background", bar_background)
+	_combo_bar.add_theme_stylebox_override("fill", _combo_fill)
+	bar_holder.add_child(_combo_bar)
 
 	var shop := VBoxContainer.new()
 	shop.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
@@ -131,7 +163,9 @@ func set_flash(alpha: float) -> void:
 	_flash.color.a = alpha
 
 
-func refresh(economy: Economy, delta: float) -> void:
+func refresh(economy: Economy, delta: float, combo: Combo = null) -> void:
+	if combo:
+		_refresh_combo(combo)
 	if _rate_popped >= 0 and delta > 0.0:
 		_rate = lerpf(_rate, (economy.popped - _rate_popped) / delta, 1.0 - exp(-delta / RATE_WINDOW))
 	_rate_popped = economy.popped
@@ -162,6 +196,26 @@ func refresh(economy: Economy, delta: float) -> void:
 	_hint_label.text = "%s  |  Right-drag or WASD: move  |  Wheel: zoom%s" % [
 		"Hold and drag: pop" if economy.rolling_pin else "Click: pop",
 		"  |  TIME x%d (F10)" % Engine.time_scale if Engine.time_scale != 1.0 else ""]
+
+
+func _refresh_combo(combo: Combo) -> void:
+	var multiplier := combo.multiplier()
+	var frenzy := combo.frenzy_left > 0.0
+	var color := FRENZY_COLOR if frenzy else COMBO_COLORS[combo.level()]
+	_combo_label.text = "x%d FRENZY %ds" % [multiplier, ceili(combo.frenzy_left)] if frenzy else "x%d COMBO" % multiplier
+	_combo_label.add_theme_color_override("font_color", color)
+	_combo_bar.value = combo.meter
+	_combo_fill.bg_color = color
+	var target := 1.0 if frenzy or combo.meter > 0.02 else 0.0
+	_combo_box.modulate.a = move_toward(_combo_box.modulate.a, target, 0.08)
+	if multiplier > _shown_multiplier:
+		if _combo_punch:
+			_combo_punch.kill()
+		_combo_label.pivot_offset = _combo_label.size / 2.0
+		_combo_label.scale = Vector2.ONE * 1.35
+		_combo_punch = create_tween()
+		_combo_punch.tween_property(_combo_label, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_shown_multiplier = multiplier
 
 
 func _level_text(economy: Economy, id: StringName) -> String:

@@ -8,6 +8,7 @@
 #   --press S (shot taken S seconds into a press at the center, below Game.PRESS_MAX).
 #   --producers N (owns one of each of the first N producer tiers).
 #   --zoom-out S (shot taken S seconds into the zoom out to the globe, see Cinematic for the timeline).
+#   --combo METER (0..1), --frenzy, --golden (a golden bubble near the center).
 # Uses its own save file and mutes sound.
 extends Node
 
@@ -54,6 +55,12 @@ func _ready() -> void:
 	for n in int(_options.get("pops", "0")):
 		var a := Vector2(rng.randf_range(-12, 12), rng.randf_range(-12, 4))
 		game.pop_segment(a, a + Vector2.from_angle(rng.randf() * TAU) * rng.randf_range(0, 6), radius)
+	if _options.has("combo"):
+		game.combo.meter = float(_options["combo"])
+	if _options.has("frenzy"):
+		game.combo.start_frenzy()
+	if _options.has("golden"):
+		game.golden.show_at(SheetData.nearest_cell(Vector2(-2, -1)))
 	await get_tree().create_timer(float(_options.get("time", "0.6"))).timeout
 	if _options.has("press"):
 		game.press_begin(Vector2(0, -2))

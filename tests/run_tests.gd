@@ -15,6 +15,9 @@ const TESTS: Array[StringName] = [
 	&"test_pacing_stays_in_target",
 	&"test_first_producer_zooms_out_to_the_globe_and_back",
 	&"test_a_click_skips_the_zoom_out",
+	&"test_combo_heats_up_and_cools_down",
+	&"test_combo_multiplies_every_pop",
+	&"test_golden_bubble_pays_only_by_hand",
 	&"test_click_pops_and_pays",
 	&"test_press_squeezes_then_release_bursts",
 	&"test_holding_bursts_on_its_own",
@@ -216,6 +219,66 @@ func test_a_click_skips_the_zoom_out() -> void:
 	check(game.cinematic.active and not game.globe.visible and game.camera.current, "a click in orbit cuts to the descent")
 	_run_cinematic(game, Cinematic.DESCEND)
 	check(not game.cinematic.active, "and lands")
+	game.queue_free()
+
+
+func test_combo_heats_up_and_cools_down() -> void:
+	var combo := Combo.new()
+	check(combo.multiplier() == 1, "no combo at rest")
+	# Four clicks a second.
+	for i in 40:
+		combo.feed(Combo.CLICK_FILL)
+		combo.update(0.25)
+	check(combo.multiplier() == Combo.MULTIPLIERS[-1], "steady clicking reaches the top (x%d)" % combo.multiplier())
+	combo.update(Combo.IDLE_AFTER + 3.0)
+	check(combo.multiplier() == 1, "stopping cools it down")
+	for i in 30:
+		combo.feed(Combo.DRAG_FILL_PER_SECOND * 0.1)
+		combo.update(0.1)
+	check(combo.multiplier() == Combo.MULTIPLIERS[-1], "three seconds of rolling reach the top")
+	combo.start_frenzy()
+	check(combo.multiplier() == Combo.MULTIPLIERS[-1] * Combo.FRENZY_MULTIPLIER, "frenzy multiplies the combo")
+	combo.meter = 0.0
+	combo.update(Combo.FRENZY_SECONDS)
+	check(combo.multiplier() == 1, "frenzy runs out")
+
+
+func test_combo_multiplies_every_pop() -> void:
+	var game := await _new_game()
+	game.combo.meter = 1.0
+	var popped := game.pop_segment(Vector2(5, 5), Vector2(5, 5), 0.0)
+	check(popped == 1 and game.economy.popped == Combo.MULTIPLIERS[-1], "one bubble at x5 counts five (%d)" % game.economy.popped)
+	game.economy.producers[&"elephants"] = 1
+	var before := game.economy.popped
+	game.economy.produce(1.0, game.combo.multiplier())
+	check(game.economy.popped - before == 120 * Combo.MULTIPLIERS[-1], "producers get the multiplier too")
+	game.combo.meter = 0.0
+	game.press_begin(Vector2(9, 9))
+	game.press_end()
+	check(is_equal_approx(game.combo.meter, Combo.CLICK_FILL), "a click feeds the combo")
+	game.queue_free()
+
+
+func test_golden_bubble_pays_only_by_hand() -> void:
+	var game := await _new_game()
+	var cell := SheetData.nearest_cell(Vector2(3, -3))
+	game.golden.show_at(cell)
+	game.pop_segment(Vector2(3, -3), Vector2(3, -3), 1.5)
+	check(not game.golden.active and game.economy.popped < GoldenBubble.FIRST_AFTER_POPS, "a steamroller crushes it for nothing")
+	cell = SheetData.nearest_cell(Vector2(-6, 2))
+	game.golden.show_at(cell)
+	var before := game.economy.popped
+	game.press_begin(SheetData.cell_position(cell))
+	game.press_end()
+	check(not game.golden.active, "clicking it claims it")
+	check(game.economy.popped - before > Game.LUCKY_MIN / 2 or game.combo.frenzy_left > 0.0, "and pays out")
+	game.golden.show_at(SheetData.nearest_cell(Vector2(8, 8)))
+	game.claim_golden(&"frenzy")
+	check(game.combo.frenzy_left == Combo.FRENZY_SECONDS, "frenzy reward")
+	before = game.economy.popped
+	game.golden.show_at(SheetData.nearest_cell(Vector2(-8, 8)))
+	game.claim_golden(&"lucky")
+	check(game.economy.popped - before >= Game.LUCKY_MIN, "lucky reward pays at least the minimum")
 	game.queue_free()
 
 

@@ -55,8 +55,8 @@ func add_pops(count: int) -> int:
 
 
 ## Producer output over delta seconds; fractions carry over to the next call.
-func produce(delta: float) -> int:
-	_production_carry += production_rate() * delta
+func produce(delta: float, multiplier := 1) -> int:
+	_production_carry += production_rate() * multiplier * delta
 	var whole := floori(_production_carry)
 	_production_carry -= whole
 	return add_pops(whole)
