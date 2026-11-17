@@ -1,6 +1,6 @@
 # Screenshots of the game for visual checks without the editor (opens a window briefly).
 #
-#   godot --path . res://tools/capture.tscn -- --pops 40 --radius 2 --out /tmp/bubblewrap.png
+#   godot --path . res://tools/capture.tscn -- --pops 40 --radius 2 --out /tmp/pop_the_planet.png
 #
 # Options: --out PATH, --size WxH, --time S (wait before the shot, default 0.6),
 #   --height H (camera height), --pops N (random strokes near the center), --radius R (stroke radius),
@@ -67,7 +67,7 @@ func _ready() -> void:
 		game.pop_segment(Vector2(-4, -2), Vector2(4, -2), 1.6)
 		await get_tree().create_timer(0.03).timeout
 	await RenderingServer.frame_post_draw
-	var out: String = _options.get("out", "/tmp/bubblewrap_capture.png")
+	var out: String = _options.get("out", "/tmp/pop_the_planet_capture.png")
 	get_viewport().get_texture().get_image().save_png(out)
 	print("saved ", out)
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))

@@ -1,6 +1,6 @@
-# Bubblewrap
+# Pop the Planet
 
-Working title. Final name pending a Steam/trademark check.
+Final name, picked 2026-11-17 after a first Steam and WIPO search (no identical game or mark). A professional trademark search is still due before the Steam page. The repo folder keeps its old name.
 
 ## Pitch
 
